@@ -1,0 +1,4 @@
+app_identifier("com.chriscorp.celer")
+apple_id(ENV["APPLE_ID"])
+itc_team_id("6761074325")
+team_id("32DZ2XTUA7")
