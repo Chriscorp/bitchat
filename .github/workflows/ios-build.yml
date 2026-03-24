@@ -1,0 +1,97 @@
+name: iOS Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Fastlane lane to run (test | build | beta | release)"
+        required: true
+        default: beta
+        type: choice
+        options:
+          - test
+          - build
+          - beta
+          - release
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Tests ───────────────────────────────────────────────────────────────────
+  test:
+    name: Run Swift Tests
+    runs-on: macos-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.lane == 'test')
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+
+      - name: Build the package
+        run: swift build
+
+      - name: Run tests
+        run: swift test --parallel --disable-swift-testing
+
+  # ── Build & Upload ───────────────────────────────────────────────────────────
+  deploy:
+    name: Build & Deploy (${{ github.event.inputs.lane || 'beta' }})
+    runs-on: macos-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+
+    env:
+      BUNDLE_ID: com.chriscorp.celer
+      TEAM_ID: 32DZ2XTUA7
+      APP_STORE_APP_ID: "6761074325"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Install Fastlane
+        run: gem install fastlane --no-document
+
+      - name: Set build number
+        run: echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
+
+      - name: Run Fastlane lane
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+        run: |
+          LANE="${{ github.event.inputs.lane || 'beta' }}"
+          fastlane ios $LANE
+
+      - name: Upload IPA artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Celer-${{ github.run_number }}.ipa
+          path: "*.ipa"
+          retention-days: 14
