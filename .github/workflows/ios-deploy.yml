@@ -1,0 +1,52 @@
+name: iOS Deploy to App Store
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to App Store
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '2.7'
+          bundler-cache: true
+
+      - name: Install Fastlane
+        run: gem install fastlane
+
+      - name: Deploy to App Store
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: |
+          (umask 077 && echo "$ASC_API_KEY" > /tmp/asc_api_key.p8)
+          (umask 077 && cat > /tmp/asc_api_key.json <<EOF
+          {
+            "key_id": "$ASC_API_KEY_ID",
+            "issuer_id": "$ASC_API_ISSUER_ID",
+            "key": "/tmp/asc_api_key.p8",
+            "in_house": false
+          }
+          EOF
+          )
+          fastlane deliver \
+            --api_key_path /tmp/asc_api_key.json \
+            --skip_screenshots \
+            --skip_metadata \
+            --force
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f /tmp/asc_api_key.p8 /tmp/asc_api_key.json
